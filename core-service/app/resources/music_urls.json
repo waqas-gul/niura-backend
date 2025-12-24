@@ -1,0 +1,16 @@
+{
+    "relaxing": [
+        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3"
+    ],
+    "concentration": [
+        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3"
+    ],
+    "uplifting": [
+        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3"
+    ],
+    "ambient": [
+        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3"
+    ]
+}

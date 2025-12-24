@@ -1,0 +1,424 @@
+#########################################
+# 🔹 AWS Data Sources (for ECS module)
+#########################################
+
+# These let Terraform dynamically detect the AWS region and account.
+# Useful so you don’t hardcode them — Terraform will auto-detect your credentials.
+
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
+
+
+
+#########################################
+# 🔹 Local variables
+#########################################
+
+# A short reusable prefix for naming AWS resources.
+# Example: niura-staging
+locals {
+  name_prefix = "${var.project_name}-${var.environment}"
+}
+
+
+
+#########################################
+# 🔹 ECS Cluster
+#########################################
+
+# ECS (Elastic Container Service) is where your containers actually run.
+# Think of it as your “Docker host” managed by AWS.
+resource "aws_ecs_cluster" "this" {
+  name = "${local.name_prefix}-cluster"
+}
+
+
+
+#########################################
+# 🔹 IAM Role for ECS Task Execution
+#########################################
+
+# This role allows ECS tasks (containers) to:
+# - Pull images from ECR
+# - Write logs to CloudWatch
+# - Access certain AWS APIs (if needed later)
+resource "aws_iam_role" "task_execution_role" {
+  name = "${local.name_prefix}-ecs-task-exec-role"
+
+  # Define who can assume this role — ECS tasks in this case.
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = { Service = "ecs-tasks.amazonaws.com" },
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+# Attach the built-in AWS-managed policy that grants ECR + logging access.
+resource "aws_iam_role_policy_attachment" "task_exec_ecr" {
+  role       = aws_iam_role.task_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+
+
+#########################################
+# 🔹 CloudWatch Log Group (for ECS)
+#########################################
+
+# Centralized logging for all your ECS containers.
+# Each container will stream its logs here.
+resource "aws_cloudwatch_log_group" "ecs" {
+  name              = "/ecs/${local.name_prefix}"
+  retention_in_days = 14 # Keep logs for 14 days
+}
+
+
+
+#########################################
+# 🔹 Application Load Balancer (ALB)
+#########################################
+
+# The ALB distributes traffic (HTTP/HTTPS) to your ECS containers.
+# Here it’s internet-facing (public) and attached to your subnets.
+resource "aws_lb" "alb" {
+  name               = "${local.name_prefix}-alb"
+  load_balancer_type = "application"
+  internal           = false               # false = public facing
+  subnets            = var.subnet_ids      # Attach to the subnets from network module
+
+  tags = {
+    Name    = "${local.name_prefix}-alb"
+    Project = var.project_name
+  }
+}
+
+
+
+#########################################
+# 🔹 ALB Security Group
+#########################################
+
+# This security group controls who can reach your ALB.
+# Allows HTTP (port 80) from anywhere.
+resource "aws_security_group" "alb_sg" {
+  name        = "${local.name_prefix}-alb-sg"
+  description = "ALB security group"
+  vpc_id      = var.vpc_id
+
+  # Allow incoming HTTP from anywhere (public internet)
+  ingress {
+    description = "HTTP from anywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Allow all outbound traffic (so containers can reach the internet)
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+
+
+# === ECS Task Security Group ===
+resource "aws_security_group" "ecs_sg" {
+  name        = "${local.name_prefix}-ecs-sg"
+  description = "Security group for ECS tasks (allows DB access from tasks)"
+  vpc_id      = var.vpc_id
+
+  # Outbound traffic - needed for ECR, updates, etc.
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-ecs-sg"
+  }
+}
+
+# === Self-referencing ingress rule for ECS <-> RDS ===
+resource "aws_security_group_rule" "ecs_sg_self_ingress" {
+  description              = "Allow PostgreSQL access between tasks/RDS in same SG"
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.ecs_sg.id
+  source_security_group_id = aws_security_group.ecs_sg.id
+}
+
+
+
+
+
+#########################################
+# 🔹 Optional: Attach Extra Security Groups
+#########################################
+
+# If you pass extra security groups via variables,
+# this block adds them dynamically to the ALB.
+resource "aws_security_group_rule" "alb_attach_extra" {
+  count = length(var.security_group_ids) > 0 ? length(var.security_group_ids) : 0
+
+  type                      = "ingress"
+  security_group_id         = aws_security_group.alb_sg.id
+  source_security_group_id  = var.security_group_ids[count.index]
+  from_port                 = 0
+  to_port                   = 0
+  protocol                  = "-1"
+}
+
+
+# Allow ALB -> ECS communication on container port (8000)
+resource "aws_security_group_rule" "alb_to_ecs_http" {
+  for_each = local.service_ports
+
+  description              = "Allow ALB to reach ECS tasks on port ${each.value}"
+  type                     = "ingress"
+  from_port                = each.value
+  to_port                  = each.value
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.ecs_sg.id
+  source_security_group_id = aws_security_group.alb_sg.id
+}
+
+
+
+
+#########################################
+# 🔹 ALB Listener (Port 80)
+#########################################
+
+# The listener “listens” for traffic on port 80 (HTTP).
+# If no rule matches the request path, it returns 404 by default.
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "No service matched"
+      status_code  = "404"
+    }
+  }
+}
+
+
+locals {
+  service_envs = {
+    gateway = [
+      {
+        name  = "DATABASE_URL"
+        value = "postgresql://postgres:${var.gateway_db_password}@${var.gateway_db_endpoint}:5432/${var.gateway_db_name}"
+      },
+      {
+        name  = "JWT_SECRET_KEY"
+        value = "Niura-Secret-Key"
+      }
+    ]
+
+    core-service = [
+      {
+        name  = "DATABASE_URL"
+        value = "postgresql://postgres:${var.core_db_password}@${var.core_db_endpoint}:5432/${var.core_db_name}"
+      }
+    ]
+
+    eeg-service = [] #  key matches ECS service_images["eeg-service"]
+  }
+}
+
+
+locals {
+  service_ports = {
+    gateway      = 8000
+    core-service = 8001
+    eeg-service  = 8002
+  }
+}
+
+
+
+
+
+
+#########################################
+# 🔹 ECS Task Definitions (per service)
+#########################################
+
+# Each ECS Task Definition = “blueprint” for running a container.
+# It defines image, ports, CPU, memory, health checks, logging, etc.
+
+resource "aws_ecs_task_definition" "task" {
+  for_each = var.service_images  # Creates one per service
+
+  family                   = "${local.name_prefix}-${each.key}"
+  network_mode             = "awsvpc"         # Each task gets its own ENI/IP
+  requires_compatibilities = ["FARGATE"]      # Run on AWS Fargate (serverless)
+  cpu                      = "512"            # 0.5 vCPU
+  memory                   = "1024"           # 1 GB memory
+  execution_role_arn       = aws_iam_role.task_execution_role.arn
+
+  # Container configuration for each service
+  container_definitions = jsonencode([
+    {
+      name      = each.key
+      image     = each.value                 # ECR image URL
+      essential = true
+      portMappings = [
+        {
+          containerPort = local.service_ports[each.key]
+          hostPort      = local.service_ports[each.key]
+          protocol      = "tcp"
+        }
+      ]
+
+      #  Inject DATABASE_URL dynamically per service
+      environment = [
+        for env in local.service_envs[each.key] : {
+          name  = env.name
+          value = env.value
+        }
+      ]
+
+      # Send logs to CloudWatch under /ecs/niura-staging/<service-name>
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs.name
+          awslogs-region        = data.aws_region.current.name
+          awslogs-stream-prefix = each.key
+        }
+      }
+
+      # Health check — makes sure container is healthy before sending traffic
+      healthCheck = {
+        command     = ["CMD-SHELL", "curl -f http://localhost:${local.service_ports[each.key]}/api/health || exit 1"]
+        interval    = 30
+        retries     = 3
+        startPeriod = 10
+        timeout     = 5
+      }
+    }
+  ])
+}
+
+
+
+#########################################
+# 🔹 Target Groups (one per service)
+#########################################
+
+# Each target group represents a backend service the ALB can route to.
+# e.g., /gateway → gateway target group
+
+resource "aws_lb_target_group" "tg" {
+  for_each = var.service_images
+
+  name         = "${local.name_prefix}-${each.key}-tg"
+  port         = local.service_ports[each.key]
+  protocol     = "HTTP"
+  vpc_id       = var.vpc_id
+  target_type  = "ip"  # Each task gets its own private IP
+
+  health_check {
+    path                = "/api/health"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    matcher             = "200-399"
+  }
+}
+
+
+
+#########################################
+# 🔹 Listener Rules (Path-based Routing)
+#########################################
+
+# Routes incoming traffic to the correct service.
+# e.g.:
+#   /gateway/* → gateway service
+#   /core/*    → core-service
+#   /eeg/*     → eeg-service
+
+resource "aws_lb_listener_rule" "rules" {
+  for_each = var.service_images
+
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 100 + index(keys(var.service_images), each.key)
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.tg[each.key].arn
+  }
+
+  condition {
+    path_pattern {
+      values = concat(
+        ["/${each.key}/*", "/${each.key}"],
+        # Add short aliases for nicer public paths:
+        lookup({
+          "gateway"      = ["/gateway/*", "/gateway"],
+          "core-service" = ["/core/*", "/core"],      # alias core-service -> /core
+          "eeg-service"  = ["/eeg/*", "/eeg"]
+        }, each.key, [])
+      )
+    }
+  }
+}
+
+
+
+#########################################
+# 🔹 ECS Service (one per microservice)
+#########################################
+
+# This is what actually runs your containers.
+# It ties together:
+# - ECS cluster
+# - Task definition
+# - Target group (ALB routing)
+# - Networking (subnets, security groups)
+
+resource "aws_ecs_service" "service" {
+  for_each = var.service_images
+
+  name            = "${local.name_prefix}-${each.key}-svc"
+  cluster         = aws_ecs_cluster.this.id
+  task_definition = aws_ecs_task_definition.task[each.key].arn
+  desired_count   = var.desired_count      # Number of containers to run
+  launch_type     = "FARGATE"              # Serverless container runtime
+
+  # Networking — connect containers to subnets and security groups
+  network_configuration {
+    subnets          = var.subnet_ids
+    security_groups  = [aws_security_group.ecs_sg.id]   # use ecs_sg for tasks
+    assign_public_ip = true
+  }
+
+  # Link the container to its load balancer target group
+  load_balancer {
+    target_group_arn = aws_lb_target_group.tg[each.key].arn
+    container_name   = each.key
+    container_port   = local.service_ports[each.key]
+  }
+
+  # Make sure listener rules exist before services are created
+  depends_on = [aws_lb_listener_rule.rules]
+}
