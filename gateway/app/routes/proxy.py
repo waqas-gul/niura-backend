@@ -5,7 +5,7 @@ from starlette.requests import ClientDisconnect
 import httpx
 import logging
 
-from app.core.config import CORE_SERVICE_URL, EEG_SERVICE_URL
+from app.core.config import CORE_SERVICE_URL, EEG_SERVICE_URL, OCR_STT_SERVICE_URL
 from app.core.security import get_current_user_payload, oauth2_scheme
 from app.core.request_logger import get_request_id
 
@@ -14,16 +14,20 @@ logger = logging.getLogger("gateway.proxy")
 
 router = APIRouter()
 
+
 def require_roles(*allowed):
-    def checker(payload = Depends(get_current_user_payload)):
+    def checker(payload=Depends(get_current_user_payload)):
         roles = payload.get("roles") or []
         if allowed and not any(r in roles for r in allowed):
             raise HTTPException(status_code=403, detail="Forbidden")
         return payload
+
     return checker
 
 
-async def _forward_request(upstream_url: str, request: Request, token: str, payload: dict):
+async def _forward_request(
+    upstream_url: str, request: Request, token: str, payload: dict
+):
     method = request.method
     headers = dict(request.headers)
     headers.pop("host", None)
@@ -40,7 +44,7 @@ async def _forward_request(upstream_url: str, request: Request, token: str, payl
                 upstream_url,
                 content=request.stream(),  # Stream instead of await request.body()
                 headers=headers,
-                params=request.query_params
+                params=request.query_params,
             )
             return StreamingResponse(
                 resp.aiter_bytes(),
@@ -48,7 +52,8 @@ async def _forward_request(upstream_url: str, request: Request, token: str, payl
                 headers={
                     k: v
                     for k, v in resp.headers.items()
-                    if k.lower() not in {"content-encoding", "transfer-encoding", "connection"}
+                    if k.lower()
+                    not in {"content-encoding", "transfer-encoding", "connection"}
                 },
             )
     except ClientDisconnect:
@@ -63,7 +68,9 @@ async def _forward_request(upstream_url: str, request: Request, token: str, payl
 
 
 # ✅ SIMPLE: Keep your original approach - /core/* and /eeg/* routing
-@router.api_route("/core/{path:path}", methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])
+@router.api_route(
+    "/core/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+)
 async def proxy_core(
     path: str,
     request: Request,
@@ -75,7 +82,9 @@ async def proxy_core(
     return await _forward_request(upstream_url, request, token, payload)
 
 
-@router.api_route("/eeg/{path:path}", methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])
+@router.api_route(
+    "/eeg/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+)
 async def proxy_eeg(
     path: str,
     request: Request,
@@ -84,4 +93,22 @@ async def proxy_eeg(
 ):
     """Route /eeg/* requests to eeg-service"""
     upstream_url = f"{EEG_SERVICE_URL.rstrip('/')}/api/{path}"
+    return await _forward_request(upstream_url, request, token, payload)
+
+
+@router.api_route("/media/{media_type}/{action}", methods=["POST"])
+async def proxy_media(
+    media_type: str,
+    action: str,
+    request: Request,
+    payload: dict = Depends(get_current_user_payload),
+    token: str = Depends(oauth2_scheme),
+):
+    if media_type == "audio" and action == "transcribe":
+        upstream_url = f"{OCR_STT_SERVICE_URL.rstrip('/')}/api/audio/transcribe"
+    elif media_type == "image" and action == "extract":
+        upstream_url = f"{OCR_STT_SERVICE_URL.rstrip('/')}/api/image/extract"
+    else:
+        raise HTTPException(status_code=404, detail="Unknown media route")
+
     return await _forward_request(upstream_url, request, token, payload)

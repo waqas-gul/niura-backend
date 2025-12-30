@@ -48,6 +48,23 @@ services:
     networks:
       - backend
 
+  ocr-service:
+    build: ./ocr-service
+    container_name: ocr-service
+    expose:
+      - "8003"
+    env_file:
+      - ./ocr-service/.env
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/google-credentials.json
+    volumes:
+      - ./ocr-service/google-credentials.json:/secrets/google-credentials.json:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - backend
+
   postgres:
     image: postgres:15
     container_name: postgres
@@ -148,12 +165,13 @@ services:
       kafka:
         condition: service_healthy
     entrypoint: [
-      "bash", "-c",
-      "echo '⏳ Waiting for Kafka...' &&
-       kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic eeg.raw.data --replication-factor 1 --partitions 1 &&
-       kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic eeg.processed.data --replication-factor 1 --partitions 1 &&
-       echo '✅ Kafka topics ready'"
-    ]
+        "bash",
+        "-c",
+        "echo '⏳ Waiting for Kafka...' &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic eeg.raw.data --replication-factor 1 --partitions 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic eeg.processed.data --replication-factor 1 --partitions 1 &&
+        echo '✅ Kafka topics ready'",
+      ]
     networks:
       - backend
     restart: "no"
@@ -164,26 +182,12 @@ networks:
 
 volumes:
   postgres_data:
-
-
-
-
-
-
-
-
-
-
-
-
 # commands to consume data from kafka topic
 #-------------------------------------------
 
 # docker exec -it kafka bash
 # kafka-console-consumer --bootstrap-server kafka:9092 --topic eeg.raw.data --from-beginning
 
-
-
-#see all kafka topics 
+#see all kafka topics
 #---------------------
 # kafka-topics --bootstrap-server kafka:9092 --list

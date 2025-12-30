@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv
+*.log
+.env
+.DS_Store
+*.swp
+*.swo
+uploads/
+temp/
+
+# Google Cloud credentials (SECURITY: Never commit these!)
+google-credentials.json
+*.json
+!app/**/*.json
+
+# Test files
+test_vision.py

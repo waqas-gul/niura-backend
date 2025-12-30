@@ -1,0 +1,43 @@
+# OCR & Speech-to-Text API - Requirements
+
+# ============================================
+# SYSTEM REQUIREMENTS (Install separately)
+# ============================================
+# 1. FFmpeg - Required for Whisper audio processing
+#    Windows: winget install --id=Gyan.FFmpeg -e
+#    Verify: ffmpeg -version
+#
+# 2. Tesseract OCR - Required for OCR fallback
+#    Windows: Download from https://github.com/UB-Mannheim/tesseract/wiki
+#    Install to: C:\Program Files\Tesseract-OCR\
+#    Verify: tesseract --version
+#
+# 3. Google Cloud Credentials - Optional (for better handwriting OCR)
+#    See GOOGLE_VISION_SETUP.md for setup instructions
+# ============================================
+
+# Core FastAPI
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# NumPy compatibility fix (opencv needs 1.x)
+numpy<2.0.0
+
+# OCR Dependencies
+pytesseract==0.3.10
+opencv-python==4.9.0.80
+Pillow==10.2.0
+
+# Google Vision API for handwriting recognition
+google-cloud-vision==3.7.0
+
+# Speech-to-Text Dependencies - OpenAI Whisper (best accuracy)
+# NOTE: Requires FFmpeg to be installed (see above)
+torch>=2.0.0
+torchaudio>=2.0.0
+openai-whisper
+
+# Utilities
+pydantic==2.5.3
+python-dotenv==1.0.0

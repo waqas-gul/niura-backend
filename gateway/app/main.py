@@ -4,7 +4,12 @@ from contextlib import asynccontextmanager
 import os
 import asyncio
 
-from app.routes import user_controller, proxy, eeg_gateway_controller
+from app.routes import (
+    user_controller,
+    proxy,
+    eeg_gateway_controller,
+)
+
 from app.database import Base, engine
 from app.websocket import routes as websocket_routes
 from app.core.logging_config import setup_json_logger
@@ -18,12 +23,13 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Gateway service starting up")
     Base.metadata.create_all(bind=engine)
     logger.info("✅ Database initialized")
-    
+
     # Set event loop for Kafka consumer
     from app.events.kafka_consumer import start_consumer, set_event_loop
+
     set_event_loop(asyncio.get_event_loop())
     start_consumer()
-    
+
     # ℹ️  Kafka topics are created manually via bastion host (see backEnd/KAFKA_SETUP.md)
     # This follows AWS MSK Serverless best practices for topic management
 
@@ -43,7 +49,7 @@ app = FastAPI(
     description="Handles user, proxy, and EEG gateway routes for Niura.",
     version="2.0.0",
     lifespan=lifespan,
-    root_path="/gateway"
+    root_path="/gateway",
 )
 
 # Middleware
@@ -57,10 +63,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # ✅ HEALTH CHECK ENDPOINT
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
 
 # Include routers
 app.include_router(user_controller.router, prefix="/api", tags=["User"])
