@@ -1,33 +1,6 @@
-# FROM python:3.11-alpine
-
-
-# RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev librdkafka-dev
-# # Install system dependencies for psutil, pyodbc, etc.
-# RUN apk update && apk add --no-cache \
-#     gcc \
-#     musl-dev \
-#     python3-dev \
-#     linux-headers \
-#     build-base \
-#     unixodbc-dev
-
-
-    
-# WORKDIR /app
-
-# COPY requirements.txt .
-# RUN pip install --no-cache-dir -r requirements.txt
-
-# COPY ./app ./app
-
-# CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
-
-
-
 FROM python:3.11-slim-bullseye
 
-# Set timezone to UTC and ensure proper time synchronization
+# Set timezone
 ENV TZ=UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
@@ -43,12 +16,11 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libsasl2-dev \
     zlib1g-dev \
-    libssl1.1 \
     libsasl2-2 \
     tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# Build librdkafka from source
+# Build librdkafka
 RUN git clone https://github.com/edenhill/librdkafka.git /tmp/librdkafka && \
     cd /tmp/librdkafka && \
     git checkout v2.3.0 && \
@@ -60,13 +32,12 @@ RUN git clone https://github.com/edenhill/librdkafka.git /tmp/librdkafka && \
 
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY requirements.txt .
-
 # Install Python dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy app code
 COPY ./app ./app
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# IMPORTANT: Use Render's PORT
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
