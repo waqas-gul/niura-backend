@@ -36,8 +36,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app code
+# Copy app code and migrations
 COPY ./app ./app
+COPY ./alembic ./alembic
+COPY ./alembic.ini .
 
 # IMPORTANT: Use Render's PORT
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

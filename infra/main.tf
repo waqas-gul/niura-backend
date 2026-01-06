@@ -82,7 +82,9 @@ module "ecr" {
   services = [
     "gateway",      # For API Gateway container
     "core-service", # For your backend core logic
-    "eeg-service"   # For EEG data processing service
+    "eeg-service",  # For EEG data processing service
+    "eeg-worker",   # For Celery worker
+    "ocr-service"   # For OCR service
   ]
 }
 
@@ -111,6 +113,7 @@ module "ecs" {
     gateway        = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/niura-gateway-staging:latest"
     "core-service" = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/niura-core-service-staging:latest"
     "eeg-service"  = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/niura-eeg-service-staging:latest"
+    "ocr-service"  = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/niura-ocr-service-staging:latest"
   }
 
   # 🔹 Port on which your container listens (e.g. FastAPI = 8000)
@@ -282,6 +285,51 @@ data "aws_ami" "amazon_linux" {
 }
 
 
+# ============================================================================
+# REDIS (ElastiCache) - Celery Broker
+# ============================================================================
+module "redis" {
+  source = "./modules/redis"
+  
+  project_name          = var.project_name
+  environment           = var.environment
+  vpc_id                = module.network.vpc_id
+  private_subnet_ids    = module.network.subnet_ids
+  ecs_security_group_id = module.ecs.ecs_security_group_id
+  
+  node_type        = "cache.t4g.small"  # 1.37 GB RAM, ~$24/month (2x micro cost, 2.7x memory)
+  num_cache_nodes  = 1                   # Single node for staging
+  multi_az_enabled = false
+}
+
+# ============================================================================
+# EEG WORKER (Celery) - Background Processing
+# ============================================================================
+module "eeg_worker" {
+  source = "./modules/eeg-worker"
+  
+  project_name            = var.project_name
+  environment             = var.environment
+  aws_region              = data.aws_region.current.name
+  ecs_cluster_id          = module.ecs.cluster_id
+  ecs_cluster_name        = module.ecs.cluster_name
+  ecs_execution_role_arn  = module.ecs.ecs_execution_role_arn
+  ecs_task_role_arn       = module.ecs.ecs_task_role_arn
+  ecs_security_group_id   = module.ecs.ecs_security_group_id
+  private_subnet_ids      = module.network.subnet_ids
+  ecr_repository_url      = module.ecr.repository_urls["eeg-worker"]
+  redis_url               = module.redis.redis_connection_string
+  kafka_bootstrap_servers = module.kafka.kafka_bootstrap_brokers
+  
+  worker_cpu           = 2048  # 2 vCPU
+  worker_memory        = 4096  # 4 GB
+  worker_desired_count = 2     # Start with 2 workers
+  worker_min_count     = 1
+  worker_max_count     = 10
+  
+  depends_on = [module.redis, module.ecs]
+}
+
 
 # Add these output blocks to the end of your main.tf file
 output "load_balancer_url" {
@@ -302,4 +350,9 @@ output "core_service_url" {
 output "eeg_service_url" {
   description = "Direct URL to access EEG service"
   value       = "http://${module.ecs.alb_dns}/eeg-service"
+}
+
+output "ocr_service_url" {
+  description = "Direct URL to access OCR service"
+  value       = "http://${module.ecs.alb_dns}/ocr-service"
 }

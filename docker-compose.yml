@@ -40,11 +40,14 @@ services:
       - "8002"
     environment:
       - KAFKA_BROKER=kafka:9092
+      - REDIS_URL=redis://redis:6379/0
     env_file:
       - ./eeg-service/.env
     depends_on:
       kafka-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     networks:
       - backend
 
@@ -64,6 +67,57 @@ services:
         condition: service_completed_successfully
     networks:
       - backend
+
+  # ============================================================================
+  # CELERY WORKER - CPU-intensive EEG processing
+  # ============================================================================
+  # Separate container for background FFT processing
+  # Isolates CPU-bound work from HTTP request handling
+  # Scales independently from web workers
+  # ============================================================================
+  eeg-worker:
+    build:
+      context: ./eeg-service
+      dockerfile: Dockerfile.worker
+    container_name: eeg-worker
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - ./eeg-service/.env
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    # Allow worker to use more CPU/memory for FFT processing
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # ============================================================================
+  # REDIS - Celery broker and result backend
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - backend
+    volumes:
+      - redis_data:/data
 
   postgres:
     image: postgres:15
@@ -182,6 +236,19 @@ networks:
 
 volumes:
   postgres_data:
+  redis_data:
+
+
+
+
+
+
+
+
+
+
+
+
 # commands to consume data from kafka topic
 #-------------------------------------------
 

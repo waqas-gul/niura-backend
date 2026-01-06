@@ -3,12 +3,10 @@ Speech-to-Text Controller - Handles audio transcription requests
 """
 
 from fastapi import APIRouter, File, UploadFile, HTTPException
-from app.services.stt_service import STTService
 from app.models.responses import STTResponse
 from app.core.logging_config import logger
 
 router = APIRouter()
-stt_service = STTService()
 
 
 @router.post("/transcribe", response_model=STTResponse)
@@ -23,6 +21,9 @@ async def transcribe_audio(file: UploadFile = File(...)):
         STTResponse with transcribed text
     """
     try:
+        # Import here to use the singleton service from main.py
+        from app.main import stt_service
+        
         # Validate file type - check both content_type and file extension
         allowed_types = [
             "audio/wav",

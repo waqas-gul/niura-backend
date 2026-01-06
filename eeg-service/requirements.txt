@@ -1,21 +1,106 @@
-annotated-types==0.7.0
+# ============================================================================
+# PERFORMANCE-CRITICAL DEPENDENCIES
+# ============================================================================
+# High-performance event loop (2-4x faster than asyncio default)
+uvloop==0.19.0
+
+# Fast HTTP protocol implementation (C extension)
+httptools==0.6.1
+
+# Celery task queue for CPU-intensive background processing
+celery==5.3.6
+redis==5.0.1  # Redis as Celery broker and result backend
+
+# Fast JSON serialization (faster than standard json)
+orjson==3.10.5
+ujson==5.10.0
+
+# ============================================================================
+# CORE FASTAPI STACK
+# ============================================================================
+fastapi==0.111.0
+fastapi-cli==0.0.4
+uvicorn==0.30.1
+starlette==0.37.2
+
+# Pydantic v2 (faster validation)
+pydantic==2.7.4
+pydantic-extra-types==2.9.0
+pydantic-settings==2.4.0
+pydantic_core==2.18.4
+
+# ============================================================================
+# ASGI/HTTP INFRASTRUCTURE
+# ============================================================================
+h11==0.14.0
+httpcore==1.0.5
+httpx==0.27.0
 anyio==4.4.0
-apscheduler==3.10.4
-autoflake==2.3.1
+sniffio==1.3.1
+websockets==12.0
+watchfiles==0.22.0
+
+# ============================================================================
+# KAFKA & EVENT STREAMING
+# ============================================================================
+confluent-kafka
+aws-msk-iam-sasl-signer-python>=1.0.1
+boto3>=1.35.0
+
+# ============================================================================
+# DATABASE (needed for imports even if not directly used)
+# ============================================================================
+sqlalchemy==2.0.31
+psycopg2-binary==2.9.10
+
+# ============================================================================
+# EEG PROCESSING & SCIENTIFIC COMPUTING
+# ============================================================================
+brainflow
+numpy==1.26.4
+pandas==2.2.2
+scipy==1.11.4
+
+# ============================================================================
+# AUTHENTICATION & SECURITY
+# ============================================================================
+PyJWT==2.10.1
+python-jose==3.3.0
+jose
+python-jose[cryptography]
+passlib==1.7.4
 bcrypt==4.0.1
-certifi==2024.6.2
+python-multipart==0.0.9
+
+# ============================================================================
+# UTILITIES & CONFIGURATION
+# ============================================================================
+python-dotenv==1.0.1
+python-dateutil==2.9.0.post0
+pytz==2024.1
 click==8.1.7
+typer==0.12.3
+typing_extensions==4.12.2
+tzdata==2024.1
+
+# ============================================================================
+# LOGGING & MONITORING
+# ============================================================================
+python-json-logger
+prometheus-client==0.20.0
+psutil==5.9.8
+
+# ============================================================================
+# SUPPORTING LIBRARIES
+# ============================================================================
+annotated-types==0.7.0
+apscheduler==3.10.4
+certifi==2024.6.2
 colorama==0.4.6
 dnspython==2.6.1
 ecdsa==0.19.0
 email_validator==2.2.0
-fastapi==0.111.0
-fastapi-cli==0.0.4
 greenlet==3.0.3
-h11==0.14.0
-httpcore==1.0.5
-httptools==0.6.1
-httpx==0.27.0
 idna==3.7
 itsdangerous==2.2.0
 Jinja2==3.1.4
@@ -23,63 +108,16 @@ markdown-it-py==3.0.0
 MarkupSafe==2.1.5
 mdurl==0.1.2
 npm==0.1.1
-numpy==1.26.4
 optional-django==0.1.0
-orjson==3.10.5
 paho-mqtt==2.1.0
-pandas==2.2.2 
-passlib==1.7.4
-psycopg2-binary==2.9.10
 pyasn1==0.6.0
-pydantic==2.7.4
-pydantic-extra-types==2.9.0
-pydantic-settings==2.4.0
-pydantic_core==2.18.4
 pyflakes==3.3.2
 Pygments==2.18.0
-PyJWT==2.10.1
 pymssql==2.3.0
-python-dateutil==2.9.0.post0
-python-dotenv==1.0.1
-python-jose==3.3.0
-python-multipart==0.0.9
-pytz==2024.1
 PyYAML==6.0.1
 rich==13.7.1
 rsa==4.9
-scipy==1.11.4
 shellingham==1.5.4
 six==1.16.0
-sniffio==1.3.1
-SQLAlchemy==2.0.31
-starlette==0.37.2
-typer==0.12.3
-typing_extensions==4.12.2
-tzdata==2024.1
-ujson==5.10.0
-uvicorn==0.30.1
-watchfiles==0.22.0
-websockets==12.0
-pyodbc==5.1.0
-# Professional database monitoring and optimization dependencies
-sqlalchemy-utils==0.41.1
-alembic==1.13.1
-psutil==5.9.8
-prometheus-client==0.20.0
-sqlalchemy
-dotenv
-psycopg2-binary
-pydantic[email]
-jose
-python-jose[cryptography]
-passlib
-python-multipart
-numpy
-brainflow
-pandas
-bcrypt
-confluent-kafka
-aws-msk-iam-sasl-signer-python>=1.0.1
-boto3>=1.35.0
 requests
-python-json-logger
+autoflake==2.3.1

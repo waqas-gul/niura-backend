@@ -154,3 +154,66 @@ resource "aws_vpc_endpoint" "logs" {
   }
 }
 
+
+########################################
+# 🔧 SSM INTERFACE ENDPOINT (For ECS Exec)
+########################################
+# Required for AWS Systems Manager Session Manager
+# Enables ECS Exec to establish shell sessions
+
+resource "aws_vpc_endpoint" "ssm" {
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.ssm"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.subnet_ids
+  security_group_ids  = [var.ecs_sg_id]
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-ssm-endpoint"
+    Environment = var.environment
+  }
+}
+
+
+########################################
+# 💬 SSM MESSAGES ENDPOINT (For ECS Exec)
+########################################
+# Required for session data channel communication
+# Must be present for ECS Exec to work
+
+resource "aws_vpc_endpoint" "ssmmessages" {
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.ssmmessages"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.subnet_ids
+  security_group_ids  = [var.ecs_sg_id]
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-ssmmessages-endpoint"
+    Environment = var.environment
+  }
+}
+
+
+########################################
+# 📡 EC2 MESSAGES ENDPOINT (For ECS Exec)
+########################################
+# Required for command execution channel
+# Completes the trio needed for ECS Exec
+
+resource "aws_vpc_endpoint" "ec2messages" {
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.ec2messages"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.subnet_ids
+  security_group_ids  = [var.ecs_sg_id]
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-ec2messages-endpoint"
+    Environment = var.environment
+  }
+}
+

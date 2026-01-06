@@ -28,7 +28,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None=None):
         "iss": JWT_ISSUER,
         "aud": JWT_AUDIENCE,
         "iat": now,
-        "nbf": now,
+        "nbf": now - timedelta(seconds=30),  # Allow 30 seconds clock skew
         "exp": now + expires_delta,
         **data
     }
@@ -44,18 +44,23 @@ def create_access_token(data: dict, expires_delta: timedelta | None=None):
 #     return encoded_jwt
 
 def verify_access_token(token: str):
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
         # Disable nbf validation to handle clock skew issues
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM], audience=JWT_AUDIENCE,
                              options={"verify_aud": True, "verify_nbf": False})
+        
         if not payload.get("sub"):
+            logger.warning("❌ Token missing 'sub' claim")
             return None
         return payload
-    except ExpiredSignatureError:
-        # Token is expired
+    except ExpiredSignatureError as e:
+        logger.warning(f"⏰ Token expired: {str(e)}")
         return "EXPIRED"
-    except JWTError:
-        # Token is invalid
+    except JWTError as e:
+        logger.error(f"❌ JWT validation failed: {type(e).__name__} - {str(e)}")
         return None
     
 def get_current_user_payload(token: str = Depends(oauth2_scheme)):

@@ -1,0 +1,27 @@
+# ============================================================================
+# CELERY WORKER DOCKERFILE - For CPU-intensive EEG processing
+# ============================================================================
+# Separate container from web workers to isolate CPU-bound tasks
+# Shares codebase but runs Celery worker process instead of Uvicorn
+# ============================================================================
+
+FROM python:3.11.13-slim-bookworm
+
+WORKDIR /app
+
+# Copy and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY ./app ./app
+
+# Run Celery worker
+# - Concurrency: 4 processes for CPU-bound FFT tasks
+# - Prefetch: 1 (important for CPU-heavy tasks - prevent queue hogging)
+# - Queues: eeg_processing (dedicated queue for FFT work)
+CMD ["celery", "-A", "app.core.celery_app", "worker", \
+     "--loglevel=info", \
+     "--concurrency=4", \
+     "--prefetch-multiplier=1", \
+     "-Q", "eeg_processing"]

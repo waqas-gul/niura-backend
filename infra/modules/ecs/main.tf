@@ -74,6 +74,28 @@ resource "aws_iam_role_policy_attachment" "task_exec_ecr" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# ECS Exec SSM permissions for execution role
+resource "aws_iam_role_policy" "task_exec_ssm_policy" {
+  name = "${local.name_prefix}-task-exec-ssm-policy"
+  role = aws_iam_role.task_execution_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 #########################################
 # 🔹 ECS Task Role (Runtime Permissions)
 #########################################
@@ -131,6 +153,38 @@ resource "aws_iam_role_policy" "ecs_task_msk_policy" {
         Resource = [
           "arn:aws:kafka:${data.aws_region.current.name}:*:group/*/*/*"
         ]
+      }
+    ]
+  })
+}
+
+# ECS Exec permissions for the task role
+resource "aws_iam_role_policy" "ecs_exec_policy" {
+  name = "${local.name_prefix}-ecs-exec-policy"
+  role = aws_iam_role.ecs_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "logs:CreateLogStream",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams",
+          "logs:PutLogEvents"
+        ],
+        Resource = "*"
       }
     ]
   })
@@ -276,10 +330,10 @@ resource "aws_security_group_rule" "bastion_to_rds" {
 }
 
 resource "aws_security_group_rule" "ecs_self_internal_comms" {
-  description              = "Allow ECS services in same SG to communicate on ports 8000-8002"
+  description              = "Allow ECS services in same SG to communicate on ports 8000-8003"
   type                     = "ingress"
   from_port                = 8000
-  to_port                  = 8002
+  to_port                  = 8003
   protocol                 = "tcp"
   security_group_id        = aws_security_group.ecs_sg.id
   source_security_group_id = aws_security_group.ecs_sg.id
@@ -368,6 +422,22 @@ locals {
         name  = "JWT_SECRET_KEY"
         value = "Niura-Secret-Key"
       },
+      {
+        name  = "JWT_ALGORITHM"
+        value = "HS256"
+      },
+      {
+        name  = "JWT_ISSUER"
+        value = "niura-gateway"
+      },
+      {
+        name  = "JWT_AUDIENCE"
+        value = "niura-services"
+      },
+      {
+        name  = "ACCESS_TOKEN_EXPIRE_MINUTES"
+        value = "60"
+      },
       # Service discovery URLs
       {
         name = "CORE_SERVICE_URL"
@@ -376,6 +446,10 @@ locals {
       {
         name = "EEG_SERVICE_URL"
         value = "http://eeg-service.${local.name_prefix}.internal:8002"
+      },
+      {
+        name = "OCR_STT_SERVICE_URL"
+        value = "http://ocr-service.${local.name_prefix}.internal:8003"
       },
       {
         name = "ENVIRONMENT"
@@ -387,10 +461,28 @@ locals {
       {
         name  = "DATABASE_URL"
         value = "postgresql://postgres:${var.core_db_password}@${var.core_db_endpoint}:5432/${var.core_db_name}"
+      },
+      {
+        name  = "JWT_SECRET_KEY"
+        value = "Niura-Secret-Key"
+      },
+      {
+        name  = "JWT_ALGORITHM"
+        value = "HS256"
+      },
+      {
+        name  = "JWT_ISSUER"
+        value = "niura-gateway"
+      },
+      {
+        name  = "JWT_AUDIENCE"
+        value = "niura-services"
       }
     ]
 
     eeg-service = []
+
+    ocr-service = []
   }
 
   # Merge base environment variables with dynamic ones from tfvars
@@ -413,6 +505,27 @@ locals {
     gateway      = 8000
     core-service = 8001
     eeg-service  = 8002
+    ocr-service  = 8003
+  }
+  
+  # Service-specific resource allocation
+  service_resources = {
+    gateway = {
+      cpu    = "512"
+      memory = "1024"
+    }
+    core-service = {
+      cpu    = "512"
+      memory = "1024"
+    }
+    eeg-service = {
+      cpu    = "512"
+      memory = "1024"
+    }
+    ocr-service = {
+      cpu    = "1024"  # More CPU for ML model
+      memory = "2048"  # 2GB for Whisper model
+    }
   }
 }
 
@@ -434,10 +547,10 @@ resource "aws_ecs_task_definition" "task" {
   family                   = "${local.name_prefix}-${each.key}"
   network_mode             = "awsvpc"         # Each task gets its own ENI/IP
   requires_compatibilities = ["FARGATE"]      # Run on AWS Fargate (serverless)
-  cpu                      = "512"            # 0.5 vCPU
-  memory                   = "1024"           # 1 GB memory
+  cpu                      = local.service_resources[each.key].cpu
+  memory                   = local.service_resources[each.key].memory
   execution_role_arn       = aws_iam_role.task_execution_role.arn
-  task_role_arn           = aws_iam_role.ecs_task_role.arn
+  task_role_arn            = aws_iam_role.ecs_task_role.arn
 
   # 🔧 DNS Configuration - PERMANENT FIX for VPC Endpoint DNS resolution
   runtime_platform {
@@ -496,9 +609,9 @@ resource "aws_ecs_task_definition" "task" {
       healthCheck = {
         command     = ["CMD-SHELL", "curl -f http://localhost:${local.service_ports[each.key]}/api/health || exit 1"]
         interval    = 30
-        retries     = 3
-        startPeriod = 60  # 🔧 Increased from 10s to 60s for reliable startup
-        timeout     = 5
+        retries     = 5
+        startPeriod = each.key == "ocr-service" ? 240 : 180  # 🔧 OCR service needs 4 minutes for initial model loading
+        timeout     = 10  # 🔧 Increased timeout for model loading checks
       }
     }
   ])
@@ -531,10 +644,10 @@ resource "aws_lb_target_group" "tg" {
 
   health_check {
     path                = "/api/health"
-    interval            = 15    # Reduced from 30s to 15s (50% faster)
-    timeout             = 10    # Increased from 5s to 10s (more reliable)
-    healthy_threshold   = 2     # Keep at 2 for reliability
-    unhealthy_threshold = 2     # Reduced from 3 to 2 (faster failure detection)
+    interval            = 30    # Check every 30 seconds
+    timeout             = 15    # 🔧 Increased to 15s (OCR service may take longer during model loading)
+    healthy_threshold   = 2     # Need 2 consecutive successes to mark healthy
+    unhealthy_threshold = 3     # Need 3 consecutive failures to mark unhealthy
     matcher             = "200-399"
   }
 }
@@ -586,6 +699,7 @@ resource "aws_ecs_service" "service" {
   task_definition = aws_ecs_task_definition.task[each.key].arn
   desired_count   = var.desired_count      # Number of containers to run
   launch_type     = "FARGATE"              # Serverless container runtime
+  platform_version = "LATEST"              # Required for ECS Exec (1.4.0+)
 
   # Networking — connect containers to subnets and security groups
   network_configuration {
@@ -609,8 +723,12 @@ resource "aws_ecs_service" "service" {
     registry_arn = aws_service_discovery_service.sd[each.key].arn
   }
 
+  # Enable ECS Exec for running commands in containers
+  enable_execute_command = true
+
   # Health check grace period - only for gateway (has ALB)
-  health_check_grace_period_seconds = each.key == "gateway" ? 60 : null
+  # OCR service gets more grace period due to model loading
+  health_check_grace_period_seconds = each.key == "gateway" ? 60 : (each.key == "ocr-service" ? 300 : null)
 
    # ✅ Force new deployment when task definition changes
   force_new_deployment = true

@@ -46,9 +46,18 @@ class EarbudUUIDBase(BaseModel):
     @validator('Left_Service_UUID', 'Left_RX_UUID', 'Left_TX_UUID', 
                'Right_Service_UUID', 'Right_RX_UUID', 'Right_TX_UUID')
     def validate_uuid_format(cls, v):
-        """Validate and normalize UUID format - accepts standard UUID format"""
+        """Validate and normalize UUID format - accepts standard UUID or hex with commas"""
         if v is None or not v:
             return None
+        
+        # Check if it's hex format with commas: 0x00000000,0x2fda,0x0000,0x0000,0x000000000001
+        if ',' in v:
+            # Remove 0x prefix and commas, convert to standard UUID format
+            hex_parts = [part.replace('0x', '').strip() for part in v.split(',')]
+            if len(hex_parts) == 5:
+                # Format: section1-section2-section3-section4-section5
+                uuid_str = f"{hex_parts[0]}-{hex_parts[1]}-{hex_parts[2]}-{hex_parts[3]}-{hex_parts[4]}"
+                return uuid_str.lower()
         
         # Standard UUID pattern: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
         uuid_pattern = r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
@@ -56,7 +65,7 @@ class EarbudUUIDBase(BaseModel):
         if re.match(uuid_pattern, v):
             return v.lower()  # Normalize to lowercase
         
-        raise ValueError(f'Invalid UUID format: {v}. Expected format: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX')
+        raise ValueError(f'Invalid UUID format: {v}. Expected format: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX or hex with commas')
 
 
 class EarbudUUIDCreate(EarbudUUIDBase):

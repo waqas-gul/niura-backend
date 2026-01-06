@@ -37,3 +37,4 @@ output "repository_urls" {
   }
   description = "Map of service name -> ECR repository URL"
 }
+

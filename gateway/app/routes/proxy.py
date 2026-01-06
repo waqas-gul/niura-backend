@@ -26,7 +26,7 @@ def require_roles(*allowed):
 
 
 async def _forward_request(
-    upstream_url: str, request: Request, token: str, payload: dict
+    upstream_url: str, request: Request, token: str, payload: dict, timeout: float = 30.0
 ):
     method = request.method
     headers = dict(request.headers)
@@ -35,8 +35,10 @@ async def _forward_request(
     headers["x-user-id"] = payload.get("sub", "")
     headers["x-request-id"] = get_request_id() or ""
 
+    logger.info(f"Forwarding {method} request to {upstream_url} (timeout: {timeout}s)")
+
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
             # Stream the request body instead of buffering it all at once
             # This prevents ClientDisconnect errors when clients close connections
             resp = await client.request(
@@ -62,8 +64,14 @@ async def _forward_request(
     except httpx.TimeoutException:
         logger.error(f"Timeout proxying to {upstream_url}")
         raise HTTPException(status_code=504, detail="Gateway timeout")
+    except httpx.ConnectError as e:
+        logger.error(f"Cannot connect to {upstream_url}: {e}")
+        raise HTTPException(status_code=502, detail=f"Cannot connect to upstream service")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error from {upstream_url}: {e}")
+        raise HTTPException(status_code=502, detail=f"Upstream service error")
     except Exception as e:
-        logger.error(f"Unexpected error proxying to {upstream_url}: {e}")
+        logger.error(f"Unexpected error proxying to {upstream_url}: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=502, detail="Bad gateway")
 
 
@@ -111,4 +119,5 @@ async def proxy_media(
     else:
         raise HTTPException(status_code=404, detail="Unknown media route")
 
-    return await _forward_request(upstream_url, request, token, payload)
+    # Use longer timeout for ML processing (OCR/STT can take time)
+    return await _forward_request(upstream_url, request, token, payload, timeout=120.0)

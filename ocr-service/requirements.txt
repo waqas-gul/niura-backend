@@ -26,7 +26,7 @@ numpy<2.0.0
 
 # OCR Dependencies
 pytesseract==0.3.10
-opencv-python==4.9.0.80
+opencv-python-headless==4.9.0.80
 Pillow==10.2.0
 
 # Google Vision API for handwriting recognition
@@ -34,8 +34,7 @@ google-cloud-vision==3.7.0
 
 # Speech-to-Text Dependencies - OpenAI Whisper (best accuracy)
 # NOTE: Requires FFmpeg to be installed (see above)
-torch>=2.0.0
-torchaudio>=2.0.0
+# PyTorch CPU-only version installed separately in Dockerfile
 openai-whisper
 
 # Utilities

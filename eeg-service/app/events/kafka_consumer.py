@@ -43,7 +43,7 @@ def handle_eeg_data(data):
         eeg_payload = data.get("data", {})
         
 
-        # save_raw_eeg_to_s3(user_id, eeg_payload) // Uncomment if S3 backup is needed
+        save_raw_eeg_to_s3(user_id, eeg_payload) 
         # Send it to your FastAPI endpoint
         response = requests.post(
             EEG_API_URL,

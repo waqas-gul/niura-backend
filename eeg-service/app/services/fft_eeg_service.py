@@ -178,7 +178,11 @@ class FFTEEGService:
         """
         try:
             # Convert records to numpy array
-            eeg_data = np.array([r.eeg for r in records], dtype=np.int32)
+            # Handle both dict and Pydantic model inputs
+            if isinstance(records[0], dict):
+                eeg_data = np.array([r['eeg'] for r in records], dtype=np.int32)
+            else:
+                eeg_data = np.array([r.eeg for r in records], dtype=np.int32)
             n_samples, n_channels = eeg_data.shape
             
             logger.info(f"Processing {n_samples} samples, {n_channels} channels with FFT pipeline")
@@ -210,11 +214,19 @@ class FFTEEGService:
                 
                 # Use timestamp from middle of window
                 mid_idx = start + window_samples // 2
-                timestamp = (
-                    records[mid_idx].timestamp
-                    if mid_idx < len(records)
-                    else records[-1].timestamp
-                )
+                # Handle both dict and Pydantic model inputs
+                if isinstance(records[0], dict):
+                    timestamp = (
+                        records[mid_idx]['timestamp']
+                        if mid_idx < len(records)
+                        else records[-1]['timestamp']
+                    )
+                else:
+                    timestamp = (
+                        records[mid_idx].timestamp
+                        if mid_idx < len(records)
+                        else records[-1].timestamp
+                    )
 
                 
                 processed_records.append({

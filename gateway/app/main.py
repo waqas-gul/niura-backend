@@ -21,6 +21,15 @@ from app.core.request_logger import ContextLoggingMiddleware, RequestLoggingMidd
 async def lifespan(app: FastAPI):
     # --- Startup ---
     logger.info("🚀 Gateway service starting up")
+    
+    # Log JWT configuration on startup
+    from app.core.config import JWT_ISSUER, JWT_AUDIENCE, JWT_SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES
+    logger.info(f"🔐 JWT Configuration:")
+    logger.info(f"   JWT_ISSUER: {JWT_ISSUER}")
+    logger.info(f"   JWT_AUDIENCE: {JWT_AUDIENCE}")
+    logger.info(f"   JWT_SECRET_KEY: {'***' if JWT_SECRET_KEY else 'NOT SET'}")
+    logger.info(f"   ACCESS_TOKEN_EXPIRE_MINUTES: {ACCESS_TOKEN_EXPIRE_MINUTES}")
+    
     Base.metadata.create_all(bind=engine)
     logger.info("✅ Database initialized")
 

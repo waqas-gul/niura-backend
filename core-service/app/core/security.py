@@ -1,4 +1,7 @@
 from fastapi import Request, HTTPException, status, Depends
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ✅ SIMPLIFIED: Trust X-User-ID header from Gateway
 # Gateway has already verified JWT, so we don't need to do it again
@@ -11,7 +14,9 @@ def get_current_user_payload(request: Request) -> dict:
     We trust this because core-service is PRIVATE (only gateway can reach it).
     """
     user_id = request.headers.get("x-user-id")
+    
     if not user_id:
+        logger.error("❌ Core service: Missing X-User-ID header!")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing X-User-ID header (are you calling through gateway?)",
